@@ -37,7 +37,10 @@ func (s ParcelStore) Get(number int) (Parcel, error) {
 	p := Parcel{}
 
 	err := row.Scan(&p.Number, &p.Client, &p.Status, &p.Address, &p.CreatedAt)
-	return p, err
+	if err != nil {
+		return Parcel{}, err
+	}
+	return p, nil
 }
 
 func (s ParcelStore) GetByClient(client int) ([]Parcel, error) {
@@ -58,7 +61,9 @@ func (s ParcelStore) GetByClient(client int) ([]Parcel, error) {
 		}
 		res = append(res, p)
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return res, nil
 }
 
@@ -73,29 +78,40 @@ func (s ParcelStore) SetStatus(number int, status string) error {
 func (s ParcelStore) SetAddress(number int, address string) error {
 	// реализуйте обновление адреса в таблице parcel
 	// менять адрес можно только если значение статуса registered
-	var status string
-	err := s.db.QueryRow("SELECT status FROM parcel WHERE number = :number", sql.Named("number", number)).Scan(&status)
+	res, err := s.db.Exec("UPDATE parcel SET address = :address WHERE number = :number AND status = :status",
+		sql.Named("address", address),
+		sql.Named("number", number),
+		sql.Named("status", ParcelStatusRegistered))
+
 	if err != nil {
 		return err
 	}
-	if status != ParcelStatusRegistered {
-		return fmt.Errorf("cannot change address unless status is 'Registered'")
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
 	}
-	_, err = s.db.Exec("UPDATE parcel SET address = :address WHERE number = :number", sql.Named("address", address), sql.Named("number", number))
-	return err
+	if rowsAffected == 0 {
+		return fmt.Errorf("only registered parcels' address can be changed")
+	}
+	return nil
 }
 
 func (s ParcelStore) Delete(number int) error {
 	// реализуйте удаление строки из таблицы parcel
 	// удалять строку можно только если значение статуса registered
-	var status string
-	err := s.db.QueryRow("SELECT status FROM parcel WHERE number = :number", sql.Named("number", number)).Scan(&status)
+	res, err := s.db.Exec("DELETE FROM parcel WHERE number = :number AND status = :status",
+		sql.Named("number", number),
+		sql.Named("status", ParcelStatusRegistered))
 	if err != nil {
 		return err
 	}
-	if status != ParcelStatusRegistered {
-		return fmt.Errorf("Parcel is not registered")
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
 	}
-	_, err = s.db.Exec("DELETE FROM parcel WHERE number = :number", sql.Named("number", number))
-	return err
+	if rowsAffected == 0 {
+		return fmt.Errorf("only registered parcels can be deleted")
+	}
+	return nil
 }
